@@ -1,23 +1,58 @@
+import Control.Monad.State.Lazy
+import Data.Char
+import System.IO
 import System.Random
 import System.Environment
 
-printAnswer :: Int -> Int -> IO ()
-printAnswer answer expected =
-  if (answer == expected)
-    then putStrLn "Bravo!"
-    else putStrLn "Boo!"
+data Operator = Plus | Minus
 
-loop :: Int -> IO ()
-loop n = do
-  comp <- randomRIO (1, n -1) :: IO Int
-  putStrLn $ show n ++ " - " ++ show comp ++ ": "
-  answer <- fmap read getLine :: IO Int
-  printAnswer answer (n - comp)
+randomRSt :: (RandomGen g, Random a) => a -> a -> State g a
+randomRSt min max = state $ randomR (min, max)
 
-  loop n
+plusOrMinus :: State StdGen Operator
+plusOrMinus = pickOneRandomly [Plus, Minus]
+
+pickOneRandomly :: [a] -> State StdGen a
+pickOneRandomly xs = do
+    index <- getIntInRange 0 ((length xs) - 1)
+    return $ xs !! index
+
+getIntInRange :: Int -> Int -> State StdGen Int
+getIntInRange = randomRSt
+
+boo :: String
+boo = "Boo!"
+
+yay :: String
+yay = "Yay!"
+
+verdict :: Int -> Int -> String
+verdict answer expected =
+  if (answer == expected) then yay else boo
+
+runRand :: State StdGen a -> IO a
+runRand stateComputation = do
+  stdGen <- getStdGen
+  let (result, newStdGen) = runState stateComputation stdGen
+  setStdGen newStdGen
+  return result
+
+loop :: [Int] -> Int -> Int -> IO ()
+loop numbers currentNumber lastRandom = do
+  comp <- runRand $ getIntInRange 1 (currentNumber - 1)
+  putStr $ show currentNumber ++ " - " ++ show comp ++ " = "
+  hFlush stdout
+  rawLine <- getLine
+  case all isDigit rawLine of
+    True -> do
+      let answer = read rawLine :: Int
+      putStrLn $ verdict answer (currentNumber - comp)
+    False -> putStrLn boo
+  loop numbers currentNumber comp
+
 main :: IO ()
 main = do
---  stdGen <- Ran.getStdGen
   args <- getArgs
-  let complementaire = read (head args) :: Int
-  loop complementaire
+  let comps = map read args :: [Int]
+  first <- runRand $ pickOneRandomly comps
+  loop comps first 0
