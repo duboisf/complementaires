@@ -25,13 +25,24 @@ pickOneRandomly xs = do
 getIntInRange :: Int -> Int -> State StdGen Int
 getIntInRange = randomRSt
 
-getRanDiffThenLast :: Int -> Int -> Int -> IO Int
-getRanDiffThenLast last min max = do
+getIntInRangeIO :: Int -> Int -> IO Int
+getIntInRangeIO min max = randomRIO (min, max)
+
+getRandomFromRangeDiffThanLast :: Int -> Int -> Int -> IO Int
+getRandomFromRangeDiffThanLast last min max = do
   pick <- randomRIO (min, max)
   if (pick == last)
-    then getRanDiffThenLast last min max
+    then getRandomFromRangeDiffThanLast last min max
     else return pick
     
+pickOneRandomlyDiffThanLast :: Eq a => [a] -> a -> IO a
+pickOneRandomlyDiffThanLast possibilities last = do
+  index <- getIntInRangeIO 0 ((length possibilities) - 1)
+  let pick = possibilities !! index
+  if (pick == last)
+    then pickOneRandomlyDiffThanLast possibilities last
+    else return pick
+
 boo :: String
 boo = "\27[31mBoo!\27[0m"
 
@@ -47,7 +58,7 @@ runRand stateComputation = do
 
 loop :: [Int] -> Int -> Int -> Int -> Int -> IO ()
 loop numbers minuend lastRandom goods bads = do
-  subtrahend <- getRanDiffThenLast lastRandom 0 minuend
+  subtrahend <- getRandomFromRangeDiffThanLast lastRandom 0 minuend
   putStr $ show minuend ++ " - " ++ show subtrahend ++ " = "
   hFlush stdout
   rawLine <- getLine
@@ -63,7 +74,10 @@ loop numbers minuend lastRandom goods bads = do
   where
     loop' msg minuend subtrahend goods bads = do
       putStrLn $ msg ++ " (good: " ++ show goods ++ ", bad: " ++ show bads ++ ")"
-      loop numbers minuend subtrahend goods bads
+      newMinuend <- if (length numbers > 1)
+        then pickOneRandomlyDiffThanLast numbers minuend
+        else return minuend
+      loop numbers newMinuend subtrahend goods bads
 
 allDigits :: String -> Bool
 allDigits = all isDigit
@@ -98,5 +112,5 @@ main = do
       Left errors -> do
         mapM_ putStrLn $ [usage] ++ ["error:"] ++ errors
       Right numbers -> do
-        first <- runRand $ pickOneRandomly numbers
-        loop numbers first 0 0 0
+        firstMinuend <- runRand $ pickOneRandomly numbers
+        loop numbers firstMinuend 0 0 0
