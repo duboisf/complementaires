@@ -56,28 +56,38 @@ runRand stateComputation = do
   setStdGen newStdGen
   return result
 
-loop :: [Int] -> Int -> Int -> Int -> Int -> IO ()
-loop numbers minuend lastRandom goods bads = do
-  subtrahend <- getRandomFromRangeDiffThanLast lastRandom 0 minuend
-  putStr $ show minuend ++ " - " ++ show subtrahend ++ " = "
+data Stats = Stats Int Int
+
+good :: Stats -> Stats
+bad :: Stats -> Stats
+good (Stats g b) = Stats (g + 1) b
+bad  (Stats g b) = Stats g (b + 1)
+
+showStats :: Stats -> String
+showStats (Stats goods bads) =
+  "(good: " ++ show goods ++ ", bad: " ++ show bads ++ ")"
+
+loop :: [Int] -> Int -> Int -> Stats -> IO ()
+loop numbers number lastRandom stats = do
+  subtrahend <- getRandomFromRangeDiffThanLast lastRandom 0 number
+  putStr $ show number ++ " - " ++ show subtrahend ++ " = "
   hFlush stdout
   rawLine <- getLine
   case allDigits rawLine of
     True -> do
       let answer = readInt rawLine
-      let loop'' msg = loop' msg minuend subtrahend
-      case answer == minuend - subtrahend of
-        True -> loop'' yay (goods + 1) bads
-        False -> loop'' boo goods (bads + 1)
-    False -> do
-      loop' boo minuend subtrahend goods (bads + 1)
+      let loop'' msg = loop' msg number subtrahend
+      case answer == number - subtrahend of
+        True -> loop'' yay $ good stats
+        False -> loop'' boo $ bad stats
+    False -> loop' boo number subtrahend $ bad stats
   where
-    loop' msg minuend subtrahend goods bads = do
-      putStrLn $ msg ++ " (good: " ++ show goods ++ ", bad: " ++ show bads ++ ")"
+    loop' msg number subtrahend stats = do
+      putStrLn $ msg ++ " " ++ (showStats stats)
       newMinuend <- if (length numbers > 1)
-        then pickOneRandomlyDiffThanLast numbers minuend
-        else return minuend
-      loop numbers newMinuend subtrahend goods bads
+        then pickOneRandomlyDiffThanLast numbers number
+        else return number
+      loop numbers newMinuend subtrahend stats
 
 allDigits :: String -> Bool
 allDigits = all isDigit
@@ -113,4 +123,4 @@ main = do
         mapM_ putStrLn $ [usage] ++ ["error:"] ++ errors
       Right numbers -> do
         firstMinuend <- runRand $ pickOneRandomly numbers
-        loop numbers firstMinuend 0 0 0
+        loop numbers firstMinuend 0 $ Stats 0 0
