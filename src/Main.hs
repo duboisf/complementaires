@@ -5,7 +5,7 @@ import Data.Char
 import Data.Either (lefts, rights)
 import Prelude hiding (last, min, max)
 import System.IO
-import System.Random (Random, RandomGen, StdGen, randomR, randomRIO, getStdGen, setStdGen)
+import System.Random (Random, RandomGen, StdGen, randomR, getStdGen, setStdGen)
 import System.Environment
 
 data Operator = Plus | Minus
@@ -13,10 +13,6 @@ data Operator = Plus | Minus
 instance Show Operator where
   show Plus = "+"
   show Minus = "-"
-
-operatorOp :: Operator -> (Int -> Int -> Int)
-operatorOp Plus = (+)
-operatorOp Minus = (-)
 
 data Operation = Operation {
     oLeftOperand :: Int
@@ -29,9 +25,15 @@ data FullOperation = FullOperation {
   , foOperation :: Operation
   }
 
+targetNumberOf :: FullOperation -> Int
+targetNumberOf (FullOperation answer operation) =
+  case oOperator operation of
+    Plus -> answer
+    Minus -> oLeftOperand operation
+
 instance Show Operation where
   show (Operation left operator right) =
-    (show left) ++ " " ++ (show operator) ++ " " ++ (show right)
+    (show left) ++ " " ++ (show operator) ++ " " ++ (show right) ++ " = "
 
 randomRSt :: (RandomGen g, Random a) => a -> a -> State g a
 randomRSt min max = state $ randomR (min, max)
@@ -49,30 +51,34 @@ getIntInRange = randomRSt
 
 ranOperation :: Int -> Operator -> State StdGen FullOperation
 ranOperation number op = do
-  left <- getIntInRange 0 number
-  return $ FullOperation number $ Operation left op $ number - left
+  otherOperand <- getIntInRange 0 number
+  case op of
+    Plus -> ranPlus otherOperand number
+    Minus -> ranMinus number otherOperand
 
-randomOperation :: Int -> State StdGen FullOperation
-randomOperation number =
-  plusOrMinus >>= ranOperation number
+  where
 
-getIntInRangeIO :: Int -> Int -> IO Int
-getIntInRangeIO min max = randomRIO (min, max)
+    ranPlus :: Int -> Int -> State StdGen FullOperation
+    ranPlus left num =
+      return $ FullOperation num $ Operation left Plus $ num - left
 
-getRandomFromRangeDiffThanLast :: Int -> Int -> Int -> IO Int
-getRandomFromRangeDiffThanLast last min max = do
-  pick <- randomRIO (min, max)
-  if (pick == last)
-    then getRandomFromRangeDiffThanLast last min max
-    else return pick
-    
-pickOneRandomlyDiffThanLast :: Eq a => [a] -> a -> IO a
-pickOneRandomlyDiffThanLast possibilities last = do
-  index <- getIntInRangeIO 0 ((length possibilities) - 1)
-  let pick = possibilities !! index
-  if (pick == last)
-    then pickOneRandomlyDiffThanLast possibilities last
-    else return pick
+    ranMinus :: Int -> Int -> State StdGen FullOperation
+    ranMinus num right = do
+      return $ FullOperation (num - right) $ Operation num Minus right
+
+randomOperationDifferent :: [Int] -> Int -> State StdGen FullOperation
+randomOperationDifferent numbers lastNumber = do
+  newTarget <- case length numbers of
+    1 -> return $ head numbers
+    _ -> pickRandomDifferent lastNumber numbers
+  plusOrMinus >>= ranOperation newTarget
+
+pickRandomDifferent :: Eq a => a -> [a] -> State StdGen a
+pickRandomDifferent lastX xs = do
+  newX <- pickOneRandomly xs
+  case newX == lastX of
+    True -> pickRandomDifferent lastX xs
+    False -> return newX
 
 boo :: String
 boo = "\27[31mBoo!\27[0m"
@@ -89,39 +95,39 @@ runRand stateComputation = do
 
 data Stats = Stats Int Int
 
+instance Show Stats where
+  show (Stats goods bads) =
+    "(good: " ++ show goods ++ ", bad: " ++ show bads ++ ")"
+
 good :: Stats -> Stats
 bad  :: Stats -> Stats
 good (Stats g b) = Stats (g + 1) b
 bad  (Stats g b) = Stats g (b + 1)
 
-showStats :: Stats -> String
-showStats (Stats goods bads) =
-  "(good: " ++ show goods ++ ", bad: " ++ show bads ++ ")"
-
-loop :: [Int] -> Int -> Int -> Stats -> IO ()
-loop numbers number lastRandom stats = do
-  subtrahend <- getRandomFromRangeDiffThanLast lastRandom 0 number
-  putStr $ show number ++ " - " ++ show subtrahend ++ " = "
+loop :: [Int] -> Int -> Stats -> IO ()
+loop numbers lastNumber oldStats = do
+  fullOperation <- runRand $ randomOperationDifferent numbers lastNumber
+  let newTarget = targetNumberOf fullOperation
+  let printStats msg stats = putStrLn $ msg ++ " " ++ (show stats)
+  let loop' msg stats = printStats msg stats >> loop numbers newTarget stats
+  let loopBad = loop' boo $ bad oldStats
+  putStrLn $ show $ foOperation fullOperation
   hFlush stdout
   rawLine <- getLine
   case allDigits rawLine of
-    True -> do
-      let answer = readInt rawLine
-      let loop'' msg = loop' msg number subtrahend
-      case answer == number - subtrahend of
-        True -> loop'' yay $ good stats
-        False -> loop'' boo $ bad stats
-    False -> loop' boo number subtrahend $ bad stats
-  where
-    loop' msg num subtrahend s = do
-      putStrLn $ msg ++ " " ++ (showStats s)
-      newMinuend <- if (length numbers > 1)
-        then pickOneRandomlyDiffThanLast numbers num
-        else return num
-      loop numbers newMinuend subtrahend s
+    Just True -> do
+      let readAnswer = readInt rawLine
+      case readAnswer == foAnswer fullOperation of
+        True -> loop' yay $ good oldStats
+        False -> loopBad
+    _ -> loopBad
 
-allDigits :: String -> Bool
-allDigits = all isDigit
+nonEmpty :: [a] -> Maybe [a]
+nonEmpty [] = Nothing
+nonEmpty xs = Just xs
+
+allDigits :: String -> Maybe Bool
+allDigits = fmap (all isDigit) . nonEmpty
 
 readInt :: String -> Int
 readInt = read
@@ -129,8 +135,8 @@ readInt = read
 safeArgToInt :: String -> Either String Int
 safeArgToInt arg =
   case allDigits arg of
-    True -> Right $ readInt arg
-    False -> Left $ "argument '" ++ arg ++ "' isn't a number"
+    Just True -> Right $ readInt arg
+    _ -> Left $ "argument '" ++ arg ++ "' isn't a number"
 
 parseArgs :: [String] -> Either [String] [Int]
 parseArgs args =
@@ -150,8 +156,5 @@ main = do
   case length args of
     0 -> putStrLn usage
     _ -> case parseArgs args of
-      Left errors -> do
-        mapM_ putStrLn $ [usage] ++ ["error:"] ++ errors
-      Right numbers -> do
-        firstMinuend <- runRand $ pickOneRandomly numbers
-        loop numbers firstMinuend 0 $ Stats 0 0
+      Left errors -> mapM_ putStrLn $ [usage] ++ ["error:"] ++ errors
+      Right numbers -> loop numbers 0 $ Stats 0 0
