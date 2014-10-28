@@ -1,29 +1,60 @@
-module Main where
+module Main (main) where
 
 import Control.Monad.State.Lazy
 import Data.Char
-import Data.Either
-import Data.List (intercalate)
-import Data.Traversable (mapM)
+import Data.Either (lefts, rights)
+import Prelude hiding (last, min, max)
 import System.IO
-import System.Random
+import System.Random (Random, RandomGen, StdGen, randomR, randomRIO, getStdGen, setStdGen)
 import System.Environment
 
 data Operator = Plus | Minus
 
+instance Show Operator where
+  show Plus = "+"
+  show Minus = "-"
+
+operatorOp :: Operator -> (Int -> Int -> Int)
+operatorOp Plus = (+)
+operatorOp Minus = (-)
+
+data Operation = Operation {
+    oLeftOperand :: Int
+  , oOperator :: Operator
+  , oRightOperand :: Int
+  }
+
+data FullOperation = FullOperation {
+    foAnswer :: Int
+  , foOperation :: Operation
+  }
+
+instance Show Operation where
+  show (Operation left operator right) =
+    (show left) ++ " " ++ (show operator) ++ " " ++ (show right)
+
 randomRSt :: (RandomGen g, Random a) => a -> a -> State g a
 randomRSt min max = state $ randomR (min, max)
-
-plusOrMinus :: State StdGen Operator
-plusOrMinus = pickOneRandomly [Plus, Minus]
 
 pickOneRandomly :: [a] -> State StdGen a
 pickOneRandomly xs = do
     index <- getIntInRange 0 ((length xs) - 1)
     return $ xs !! index
 
+plusOrMinus :: State StdGen Operator
+plusOrMinus = pickOneRandomly [Plus, Minus]
+
 getIntInRange :: Int -> Int -> State StdGen Int
 getIntInRange = randomRSt
+
+ranOperation :: Int -> Operator -> State StdGen FullOperation
+ranOperation number op = do
+  left <- getIntInRange 0 number
+  return $ FullOperation number $ Operation left op $ number - left
+
+randomOperation :: Int -> State StdGen FullOperation
+randomOperation number =
+  plusOrMinus >>= ranOperation number
 
 getIntInRangeIO :: Int -> Int -> IO Int
 getIntInRangeIO min max = randomRIO (min, max)
@@ -59,7 +90,7 @@ runRand stateComputation = do
 data Stats = Stats Int Int
 
 good :: Stats -> Stats
-bad :: Stats -> Stats
+bad  :: Stats -> Stats
 good (Stats g b) = Stats (g + 1) b
 bad  (Stats g b) = Stats g (b + 1)
 
@@ -82,12 +113,12 @@ loop numbers number lastRandom stats = do
         False -> loop'' boo $ bad stats
     False -> loop' boo number subtrahend $ bad stats
   where
-    loop' msg number subtrahend stats = do
-      putStrLn $ msg ++ " " ++ (showStats stats)
+    loop' msg num subtrahend s = do
+      putStrLn $ msg ++ " " ++ (showStats s)
       newMinuend <- if (length numbers > 1)
-        then pickOneRandomlyDiffThanLast numbers number
-        else return number
-      loop numbers newMinuend subtrahend stats
+        then pickOneRandomlyDiffThanLast numbers num
+        else return num
+      loop numbers newMinuend subtrahend s
 
 allDigits :: String -> Bool
 allDigits = all isDigit

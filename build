@@ -20,7 +20,7 @@ fi
 do_build() {
     print "[0;33mInvoking cabal build...[0m"
     local color
-    CABAL_OUTPUT=$(cabal build 2>&1)
+    CABAL_OUTPUT=$(cabal build --ghc-options="-Wall -fforce-recomp -fno-code" 2>&1)
     local cabal_exit_code=$?
     (( $cabal_exit_code != 0 )) && color=1
     print "[0;3${color:-2}m${CABAL_OUTPUT}[0m"
